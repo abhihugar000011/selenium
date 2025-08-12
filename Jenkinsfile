@@ -1,17 +1,13 @@
 pipeline {
     agent any
 
-    triggers {
-        // This is for webhook or polling — comment/uncomment based on your setup
-        // Polling example: pollSCM('H/5 * * * *')
-    }
 
-    stages {
-        stage('Checkout Code') {
-            steps {
-                git branch: 'main', url: 'https://github.com/yourusername/yourrepo.git'
-            }
-        }
+    // stages {
+    //     stage('Checkout Code') {
+    //         steps {
+    //             git branch: 'main', url: 'https://github.com/yourusername/yourrepo.git'
+    //         }
+    //     }
 
         stage('Install Dependencies') {
             steps {
