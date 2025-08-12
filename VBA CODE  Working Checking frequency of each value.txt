@@ -1,0 +1,225 @@
+Sub ExportValueFrequencyMismatch()
+    Dim wsSource As Worksheet, wsOutput As Worksheet
+    Dim lastRow As Long, lastCol As Long, i As Long, j As Long
+    Dim fieldName As String, outputRow As Long
+    Dim preshinyCol As Long, transformedCol As Long
+    Dim preshinyCountCol As Long, transformedCountCol As Long
+    Dim dictPreshiny As Object, dictTransformed As Object
+    Dim key As Variant, preshinyVal As String, transformedVal As String
+    Dim preshinyCount As Double, transformedCount As Double
+    Dim dataStartRow As Long
+    Dim anyMismatches As Boolean
+    Dim preshinyGreaterCount As Long, transformedGreaterCount As Long
+    
+    ' Set source worksheet
+    On Error Resume Next
+    Set wsSource = ThisWorkbook.Worksheets("Column Repetitions Count")
+    On Error GoTo 0
+    
+    If wsSource Is Nothing Then
+        MsgBox "Source sheet 'Column Repetitions Count' not found!", vbCritical
+        Exit Sub
+    End If
+    
+    ' Create output sheet
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Worksheets("Value Frequency Mismatch").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    
+    Set wsOutput = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    wsOutput.Name = "Value Frequency Mismatch"
+    outputRow = 2
+    
+    ' Format output headers
+    With wsOutput
+        .Cells(1, 1).Value = "Field Name"
+        .Cells(1, 2).Value = "Value"
+        .Cells(1, 3).Value = "Preshiny Count"
+        .Cells(1, 4).Value = "Transformed Count"
+        .Cells(1, 5).Value = "Difference"
+        .Cells(1, 6).Value = "Status"
+        
+        With .Range("A1:F1")
+            .Font.Bold = True
+            .Font.Color = RGB(255, 255, 255)
+            .Interior.Color = RGB(31, 73, 125)
+            .HorizontalAlignment = xlCenter
+        End With
+    End With
+    
+    ' Find data range
+    dataStartRow = 2
+    lastRow = FindLastRow(wsSource)
+    lastCol = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
+    
+    ' Check if we have any data at all
+    If lastRow < dataStartRow Then
+        wsOutput.Cells(2, 1).Value = "No data found in source sheet!"
+        wsOutput.Columns("A:F").AutoFit
+        MsgBox "No data found in source sheet!", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Main processing loop
+    anyMismatches = False
+    For i = 1 To lastCol
+        If InStr(1, wsSource.Cells(1, i).Value, "(Preshiny Values)") > 0 Then
+            fieldName = Trim(Replace(wsSource.Cells(1, i).Value, "(Preshiny Values)", ""))
+            
+            ' Find all related columns
+            preshinyCol = i
+            preshinyCountCol = FindColumnByName(wsSource, fieldName & " (Preshiny Count)")
+            transformedCol = FindColumnByName(wsSource, fieldName & " (Transformed Values)")
+            transformedCountCol = FindColumnByName(wsSource, fieldName & " (Transformed Count)")
+            
+            ' Verify we found all required columns
+            If preshinyCountCol > 0 And transformedCol > 0 And transformedCountCol > 0 Then
+                Set dictPreshiny = CreateObject("Scripting.Dictionary")
+                Set dictTransformed = CreateObject("Scripting.Dictionary")
+                
+                ' Collect Preshiny values
+                For j = dataStartRow To lastRow
+                    preshinyVal = CStr(wsSource.Cells(j, preshinyCol).Value)
+                    If preshinyVal <> "" Then
+                        If IsNumeric(wsSource.Cells(j, preshinyCountCol).Value) Then
+                            preshinyCount = wsSource.Cells(j, preshinyCountCol).Value
+                        Else
+                            preshinyCount = ExtractLeadingNumber(wsSource.Cells(j, preshinyCountCol).Value)
+                        End If
+                        
+                        If preshinyCount > 0 Then
+                            dictPreshiny(preshinyVal) = preshinyCount
+                        End If
+                    End If
+                Next j
+                
+                ' Collect Transformed values
+                For j = dataStartRow To lastRow
+                    transformedVal = CStr(wsSource.Cells(j, transformedCol).Value)
+                    If transformedVal <> "" Then
+                        If IsNumeric(wsSource.Cells(j, transformedCountCol).Value) Then
+                            transformedCount = wsSource.Cells(j, transformedCountCol).Value
+                        Else
+                            transformedCount = ExtractLeadingNumber(wsSource.Cells(j, transformedCountCol).Value)
+                        End If
+                        
+                        If transformedCount > 0 Then
+                            dictTransformed(transformedVal) = transformedCount
+                        End If
+                    End If
+                Next j
+                
+                ' Find and export mismatches - UP TO 3 OF EACH TYPE
+                preshinyGreaterCount = 0
+                transformedGreaterCount = 0
+                
+                For Each key In dictPreshiny.Keys
+                    If dictTransformed.Exists(key) Then
+                        If dictPreshiny(key) > dictTransformed(key) And preshinyGreaterCount < 3 Then
+                            anyMismatches = True
+                            preshinyGreaterCount = preshinyGreaterCount + 1
+                            With wsOutput
+                                .Cells(outputRow, 1).Value = fieldName
+                                .Cells(outputRow, 2).Value = key
+                                .Cells(outputRow, 3).Value = dictPreshiny(key)
+                                .Cells(outputRow, 4).Value = dictTransformed(key)
+                                .Cells(outputRow, 5).Value = dictTransformed(key) - dictPreshiny(key)
+                                .Cells(outputRow, 6).Value = "Preshiny > Transformed"
+                                .Rows(outputRow).Interior.Color = RGB(255, 199, 206)
+                                outputRow = outputRow + 1
+                            End With
+                        ElseIf dictTransformed(key) > dictPreshiny(key) And transformedGreaterCount < 3 Then
+                            anyMismatches = True
+                            transformedGreaterCount = transformedGreaterCount + 1
+                            With wsOutput
+                                .Cells(outputRow, 1).Value = fieldName
+                                .Cells(outputRow, 2).Value = key
+                                .Cells(outputRow, 3).Value = dictPreshiny(key)
+                                .Cells(outputRow, 4).Value = dictTransformed(key)
+                                .Cells(outputRow, 5).Value = dictTransformed(key) - dictPreshiny(key)
+                                .Cells(outputRow, 6).Value = "Transformed > Preshiny"
+                                .Rows(outputRow).Interior.Color = RGB(198, 239, 206)
+                                outputRow = outputRow + 1
+                            End With
+                        End If
+                    End If
+                Next key
+                
+                Set dictPreshiny = Nothing
+                Set dictTransformed = Nothing
+            End If
+        End If
+    Next i
+    
+    ' Final formatting and message
+    With wsOutput
+        .Columns("A:F").AutoFit
+        
+        If Not anyMismatches Then
+            .Cells(2, 1).Value = "No frequency mismatches found!"
+            .Cells(2, 1).Font.Italic = True
+        Else
+            ' Add borders to data
+            With .Range("A2:F" & outputRow - 1)
+                .Borders(xlEdgeLeft).Weight = xlThin
+                .Borders(xlEdgeTop).Weight = xlThin
+                .Borders(xlEdgeBottom).Weight = xlThin
+                .Borders(xlEdgeRight).Weight = xlThin
+                .Borders(xlInsideVertical).Weight = xlThin
+                .Borders(xlInsideHorizontal).Weight = xlThin
+            End With
+            
+            ' Freeze headers and add filter
+            .Activate
+            .Range("A2").Select
+            ActiveWindow.FreezePanes = True
+            .Range("A1:F1").AutoFilter
+        End If
+    End With
+    
+    If anyMismatches Then
+        MsgBox "Value frequency mismatch analysis complete!" & vbCrLf & _
+               "Showing up to 3 examples of each mismatch type per field." & vbCrLf & _
+               "Results exported to: " & wsOutput.Name, vbInformation
+    Else
+        MsgBox "No value frequency mismatches found in the data.", vbInformation
+    End If
+End Sub
+
+' Helper function to find last row with data
+Function FindLastRow(ws As Worksheet) As Long
+    On Error Resume Next
+    FindLastRow = ws.Cells.Find("*", SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row
+    On Error GoTo 0
+End Function
+
+' Helper function to find column by exact name match
+Function FindColumnByName(ws As Worksheet, colName As String) As Long
+    Dim rng As Range
+    On Error Resume Next
+    Set rng = ws.Rows(1).Find(colName, LookIn:=xlValues, LookAt:=xlWhole)
+    On Error GoTo 0
+    If Not rng Is Nothing Then
+        FindColumnByName = rng.Column
+    Else
+        FindColumnByName = 0
+    End If
+End Function
+
+' Helper function to extract leading number from string
+Function ExtractLeadingNumber(inputStr As String) As Double
+    Dim i As Long, numStr As String
+    On Error Resume Next
+    For i = 1 To Len(inputStr)
+        If IsNumeric(Mid(inputStr, i, 1)) Or Mid(inputStr, i, 1) = "." Then
+            numStr = numStr & Mid(inputStr, i, 1)
+        ElseIf numStr <> "" Then
+            Exit For
+        End If
+    Next i
+    ExtractLeadingNumber = Val(numStr)
+    On Error GoTo 0
+End Function
+
